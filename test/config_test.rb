@@ -43,6 +43,7 @@ class ConfigTest < MiniTest::Unit::TestCase
     end
     refute_nil config
     assert_same config, Vines::Agent::Config.instance
+    assert_equal 'secr3t', config.domain.password
   end
 
   def test_default_download_directory

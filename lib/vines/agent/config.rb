@@ -34,9 +34,13 @@ module Vines
         log.level = const
       end
 
-      def domain(name, &block)
-        raise 'multiple domains not allowed' if @domain
-        @domain = Domain.new(name, &block)
+      def domain(name=nil, &block)
+        if name
+          raise 'multiple domains not allowed' if @domain
+          @domain = Domain.new(name, &block)
+        else
+          @domain
+        end
       end
 
       def start
@@ -56,8 +60,12 @@ module Vines
           end
         end
 
-        def password(password)
-          @password = password
+        def password(password=nil)
+          if password
+            @password = password
+          else
+            @password
+          end
         end
 
         def download(dir)
