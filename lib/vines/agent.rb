@@ -14,6 +14,7 @@
 
   blather/client/client
 
+  vines/kit
   vines/log
   vines/daemon
 

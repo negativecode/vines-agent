@@ -37,17 +37,9 @@ module Vines
           File.open(config, 'w') do |f|
             replaced = text
               .gsub('wonderland.lit', domain.downcase)
-              .gsub('secr3t', password)
+              .gsub('secr3t', Kit.auth_token)
             f.write(replaced)
           end
-        end
-
-        # Create a large, random password with which to authenticate the
-        # agent bot's JID.
-        def password
-          hash = Digest::SHA512.new
-          1024.times { hash << rand.to_s }
-          hash.hexdigest
         end
       end
     end
