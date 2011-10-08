@@ -9,6 +9,8 @@ Users may run commands as any unix account, to which they've been granted access
 on the system. While the agent runs as root, user commands run as less privileged
 accounts.
 
+Additional documentation can be found at www.getvines.com.
+
 == Usage
 
 1. gem install vines-agent
@@ -17,9 +19,8 @@ accounts.
 
 == Dependencies
 
-* blather >= 0.5.4
+* blather >= 0.5.7
 * eventmachine >= 0.12.10
-* nokogiri >= 1.4.4
 * ruby >= 1.9.2
 
 == Ubuntu setup
@@ -27,8 +28,7 @@ $ sudo apt-get install build-essential ruby1.9.1 ruby1.9.1-dev libxml2-dev libxs
 
 == Contact
 
-* David Graham  <david@negativecode.com>
-* Chris Johnson <chris@negativecode.com>
+* David Graham <david@negativecode.com>
 
 == License
 
