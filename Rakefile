@@ -25,7 +25,7 @@ component. Manage a server as easily as chatting with a friend."
   s.add_dependency "blather", "~> 0.5.7"
   s.add_dependency "ohai", "~> 0.6.8"
   s.add_dependency "session", "~> 3.1.0"
-  s.add_dependency "slave", "~> 1.2.1"
+  s.add_dependency "slave", "~> 1.3.0"
   s.add_dependency "vines", "~> 0.3"
 
   s.add_development_dependency "minitest"
