@@ -13,14 +13,15 @@ module Vines
       SYSTEMS = 'http://getvines.com/protocol/systems'.freeze
 
       def initialize(options)
-        domain, password, host, port, download =
-          *options.values_at(:domain, :password, :host, :port, :download)
+        domain, password, host, port, download, conf =
+          *options.values_at(:domain, :password, :host, :port, :download, :conf)
 
+        certs = File.expand_path('certs', conf)
         @permissions, @services, @sessions, @component = {}, {}, {}, nil
         @ready = false
 
         jid = Blather::JID.new(fqdn, domain, 'vines')
-        @stream = Blather::Client.setup(jid, password, host, port)
+        @stream = Blather::Client.setup(jid, password, host, port, certs)
 
         @stream.register_handler(:disconnected) do
           log.info("Stream disconnected, reconnecting . . .")

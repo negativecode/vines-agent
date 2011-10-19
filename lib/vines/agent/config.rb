@@ -50,6 +50,7 @@ module Vines
       class Domain
         def initialize(name, &block)
           @name, @password, @upstream = name, nil, []
+          @conf = File.expand_path('conf')
           instance_eval(&block) if block
           validate_domain(@name)
           raise "password required" unless @password && !@password.strip.empty?
@@ -86,7 +87,8 @@ module Vines
           base = {
             password: @password,
             domain:   @name,
-            download: @download
+            download: @download,
+            conf:     @conf
           }
           options = @upstream.map do |info|
             base.clone.tap do |opts|

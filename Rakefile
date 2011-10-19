@@ -22,7 +22,7 @@ component. Manage a server as easily as chatting with a friend."
   s.executables  = %w[vines-agent]
   s.require_path = "lib"
 
-  s.add_dependency "blather", "~> 0.5.7"
+  s.add_dependency "blather", "~> 0.5.8"
   s.add_dependency "ohai", "~> 0.6.8"
   s.add_dependency "session", "~> 3.1.0"
   s.add_dependency "slave", "~> 1.3.0"
