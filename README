@@ -19,7 +19,7 @@ Additional documentation can be found at www.getvines.com.
 
 == Dependencies
 
-* blather >= 0.5.7
+* blather >= 0.5.8
 * eventmachine >= 0.12.10
 * ruby >= 1.9.2
 
