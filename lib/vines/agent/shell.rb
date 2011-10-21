@@ -112,10 +112,27 @@ module Vines
       def run_built_in(command)
         _, command, *args = command.strip.split(/\s+/)
         case command
-          when 'user'  then user_command(args)
-          when 'reset' then reset_command(args)
-          else '-> not a vines command'
+          when 'user'    then user_command(args)
+          when 'reset'   then reset_command(args)
+          when 'version' then version_command(args)
+          when 'help'    then help_command(args)
+          else '-> usage: v user|reset|version|help'
         end
+      end
+
+      def help_command(args)
+        [
+          "Usage:",
+          "  v user [name]  Display the current user or switch users.",
+          "  v reset        Stops the shell session and starts a new one.",
+          "  v version      Display the agent's version.",
+          "  v help         Provide help on vines commands."
+         ].join("\n")
+      end
+
+      def version_command(args)
+        return "-> usage: v version" unless args.empty?
+        Vines::Agent::VERSION
       end
 
       # Run the +v user+ built-in vines command to list or change the current
