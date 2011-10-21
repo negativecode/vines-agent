@@ -35,6 +35,7 @@ module Vines
           # prevent handler called twice
           unless @ready
             log.info("Connected #{@stream.jid} agent to #{host}:#{port}")
+            log.warn("Agent must run as root user to allow user switching") unless root?
             @ready = true
             startup
           end
@@ -269,6 +270,12 @@ module Vines
       # received from untrusted JID's are ignored.
       def from_service?(node)
         @services.include?(node.from.stripped.to_s.downcase)
+      end
+
+      # Return true if the agent process is owned by root. Switching users with
+      # +v user+ is only possible when running as root.
+      def root?
+        Process.uid == 0
       end
     end
   end

@@ -140,10 +140,16 @@ module Vines
       def user_command(args)
         return "-> current: #{@user}\n   allowed: #{allowed_users.join(', ')}" if args.empty?
         return "-> usage: v user [name]" if args.size > 1
-        return "-> user switch not allowed" unless allowed?(args.first)
+        return "-> user switch not allowed" unless root? && allowed?(args.first)
         @user = args.first
         spawn(@user)
         "-> switched user to #{@user}"
+      end
+
+      # Return true if the agent process is owned by root. Switching users with
+      # +v user+ is only possible when running as root.
+      def root?
+        Process.uid == 0
       end
 
       def reset?(command)
