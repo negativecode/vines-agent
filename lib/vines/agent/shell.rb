@@ -17,8 +17,8 @@ module Vines
       # commands.
       def initialize(jid, permissions)
         @jid, @permissions = jid, permissions
-        @user, @commands = allowed_users.first, EM::Queue.new
-        spawn(@user)
+        @user = allowed_users.first if allowed_users.size == 1
+        @commands = EM::Queue.new
         process_command_queue
       end
 
@@ -55,7 +55,10 @@ module Vines
       end
 
       def run_in_slave(command)
+        return "-> no user selected, run 'v user'" unless @user
         log.info("Running #{command} as #{@user}")
+
+        spawn(@user) unless @shell
         out, err = @shell.execute(command)
         output = [].tap do |arr|
           arr << out if out && !out.empty?
@@ -63,8 +66,13 @@ module Vines
         end.join("\n")
         output.empty? ? '-> command completed' : output
       rescue
-        spawn(@user)
+        close
         '-> restarted shell'
+      end
+
+      def close
+        @slave.shutdown(quiet: true) if @slave
+        @slave = @shell = nil
       end
 
       # Fork a child process in which to run a shell as this user. Return
@@ -72,7 +80,7 @@ module Vines
       # as root for the user switch to work.
       def spawn(user)
         log.info("Starting shell as #{user}")
-        @slave.shutdown(quiet: true) if @slave
+        close
         Thread.new do # so em thread won't die on @slave.shutdown
           slave = Slave.new(psname: "vines-session-#{user}") do
             uid = Process.euid
@@ -95,7 +103,7 @@ module Vines
             shell
           end
           File.chmod(0700, slave.socket)
-          @slave, @shell = [slave, slave.object]
+          @slave, @shell = slave, slave.object
         end.join
       end
 
@@ -127,7 +135,7 @@ module Vines
           "  v reset        Stops the shell session and starts a new one.",
           "  v version      Display the agent's version.",
           "  v help         Provide help on vines commands."
-         ].join("\n")
+        ].join("\n")
       end
 
       def version_command(args)
@@ -138,18 +146,23 @@ module Vines
       # Run the +v user+ built-in vines command to list or change the current
       # unix account executing shell commands.
       def user_command(args)
-        return "-> current: #{@user}\n   allowed: #{allowed_users.join(', ')}" if args.empty?
         return "-> usage: v user [name]" if args.size > 1
-        return "-> user switch not allowed" unless root? && allowed?(args.first)
-        @user = args.first
-        spawn(@user)
-        "-> switched user to #{@user}"
-      end
 
-      # Return true if the agent process is owned by root. Switching users with
-      # +v user+ is only possible when running as root.
-      def root?
-        Process.uid == 0
+        if args.empty?
+          current = @user || '<none>'
+          allowed = allowed_users.empty? ? '<none>' : allowed_users.join(', ')
+          return "-> current: #{current}\n   allowed: #{allowed}"
+        end
+
+        user = args.first
+        if allowed?(user)
+          @user = user
+          close
+          "-> switched user to #{@user}"
+        else
+          log.warn("#{@jid} denied access to #{user}")
+          "-> user switch not allowed"
+        end
       end
 
       def reset?(command)
@@ -160,7 +173,7 @@ module Vines
       def reset_command(args)
         return "-> usage: v reset" unless args.empty?
         @commands = EM::Queue.new
-        spawn(@user)
+        close
         process_command_queue
         "-> reset shell"
       end
@@ -168,21 +181,30 @@ module Vines
       # Return true if the current JID is allowed to run commands as the given
       # user name on this system.
       def allowed?(user)
-        jids = @permissions[user] || []
-        valid = jids.include?(@jid) && exists?(user)
-        log.warn("#{@jid} denied access to #{user}") unless valid
-        valid
+        allowed = (@permissions[user] || []).include?(@jid)
+        allowed && exists?(user) && (root? || current?(user))
+      end
+
+      # Return true if the agent process is owned by root. Switching users with
+      # +v user+ is only possible when running as root.
+      def root?
+        Process.uid == 0
+      end
+
+      # Return true if the user name is the current agent process owner.
+      def current?(user)
+        Process.uid == Etc.getpwnam(user).uid
+      rescue
+        false
       end
 
       def exists?(user)
-        Etc::getpwnam(user) rescue false
+        Etc.getpwnam(user) rescue false
       end
 
       # Return the list of unix user accounts this user is allowed to access.
       def allowed_users
-        @permissions.select do |unix, jids|
-          jids.include?(@jid) && exists?(unix)
-        end.keys.sort
+        @permissions.keys.sort.select {|unix| allowed?(unix) }
       end
     end
   end
