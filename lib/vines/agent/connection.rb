@@ -23,6 +23,11 @@ module Vines
         jid = Blather::JID.new(fqdn, domain, 'vines')
         @stream = Blather::Client.setup(jid, password, host, port, certs)
 
+        @stream.register_handler(:stream_error) do |e|
+          log.error(e.message)
+          true # prevent EM.stop
+        end
+
         @stream.register_handler(:disconnected) do
           log.info("Stream disconnected, reconnecting . . .")
           EM::Timer.new(rand(16) + 5) do
