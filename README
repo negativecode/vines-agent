@@ -9,7 +9,7 @@ Users may run commands as any unix account, to which they've been granted access
 on the system. While the agent runs as root, user commands run as less privileged
 accounts.
 
-Additional documentation can be found at www.getvines.com.
+Additional documentation can be found at www.getvines.org.
 
 == Usage
 
@@ -19,12 +19,9 @@ Additional documentation can be found at www.getvines.com.
 
 == Dependencies
 
-* blather >= 0.5.8
-* eventmachine >= 0.12.10
-* ruby >= 1.9.2
-
-== Ubuntu setup
-$ sudo apt-get install build-essential ruby1.9.1 ruby1.9.1-dev libxml2-dev libxslt-dev
+Vines Agent requires Ruby 1.9.2 or better. Instructions for installing the
+needed OS packages, as well as Ruby itself, are available at
+http://www.getvines.org/ruby.
 
 == Contact
 
