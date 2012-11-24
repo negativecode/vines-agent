@@ -1,5 +1,7 @@
 # encoding: UTF-8
 
+require 'thread'
+
 module Vines
   module Agent
 
@@ -19,6 +21,7 @@ module Vines
         certs = File.expand_path('certs', conf)
         @permissions, @services, @sessions, @component = {}, {}, {}, nil
         @ready = false
+        @mtx = Mutex.new
 
         jid = Blather::JID.new(fqdn, domain, 'vines')
         @stream = Blather::Client.setup(jid, password, host, port, certs)
@@ -37,13 +40,16 @@ module Vines
         end
 
         @stream.register_handler(:ready) do
-          # prevent handler called twice
-          unless @ready
-            log.info("Connected #{@stream.jid} agent to #{host}:#{port}")
-            log.warn("Agent must run as root user to allow user switching") unless root?
-            @ready = true
-            startup
-          end
+          # [AM] making sure we are to init once
+          #      unless @ready is not enough for an obvious reason 
+          @mtx.synchronize {
+            unless @ready
+              log.info("Connected #{@stream.jid} agent to #{host}:#{port}")
+              log.warn("Agent must run as root user to allow user switching") unless root?
+              @ready = true
+              startup
+            end
+          }
         end
 
         @stream.register_handler(:subscription, :request?) do |node|
@@ -77,17 +83,20 @@ module Vines
         @stream.run
       end
 
+#     —————————————————————————————————————————————————————————————————————————
       private
+#     —————————————————————————————————————————————————————————————————————————
 
       # After the bot connects to the chat server, discover the component, send
       # our ohai system description data, and initialize permissions.
       def startup
-        cb = proc do |component|
+        cb = lambda do |component, iter|
           if component
             log.info("Found vines component at #{component}")
-            @component = component
+            @component = component.jid
             send_system_info
             request_permissions
+            iter.next
           else
             log.info("Vines component not found, rediscovering . . .")
             EM::Timer.new(10) { discover_component(&cb) }
@@ -153,6 +162,7 @@ module Vines
         end
         iq = Blather::Stanza::Iq::Query.new(:set).tap do |node|
           node.to = @component
+	        log.info "Sending system info to @component [#{@component}]"
           node.query.content = system.to_json
           node.query.namespace = SYSTEMS
         end
@@ -172,18 +182,16 @@ module Vines
       # server for its list of components, then ask each component for it's info.
       # The component broadcasting the http://getvines.com/protocol feature is our
       # Vines service.
-      def discover_component
+      def discover_component(&cb)
         disco = Blather::Stanza::DiscoItems.new
         disco.to = @stream.jid.domain
         @stream.write_with_handler(disco) do |result|
-          items = result.error? ? [] : result.items
-          Fiber.new do
-            # use fiber instead of EM::Iterator until EM 1.0.0 release
-            found = items.find {|item| component?(item.jid) }
-            yield found ? found.jid : nil
-          end.resume
+          unless result.error? 
+            EM::Iterator.new(result.items).each &cb
+          end
         end
       end
+
 
       # Return true if this JID is the Vines component with which we need to
       # communicate. This method suspends the Fiber that calls it in order to
@@ -195,6 +203,7 @@ module Vines
         @stream.write_with_handler(info) do |reply|
           features = reply.error? ? [] : reply.features
           found = !!features.find {|f| f.var == NS }
+          log.info "Component found: " + found.to_s
           fiber.resume(found)
         end
         Fiber.yield
@@ -209,14 +218,18 @@ module Vines
           node.query['name'] = @stream.jid.node
           node.query.namespace = SYSTEMS
         end
+        log.info "Request permissions with #{iq}"
         @stream.write_with_handler(iq) do |reply|
+          log.info "Reply is: " + reply.to_s
           update_permissions(reply) unless reply.error?
         end
       end
 
       def update_permissions(node)
+        log.info "Update permissions: " + node.to_s
         return unless node.from == @component
         obj = JSON.parse(node.content) rescue {}
+        log.info "Obj parsed: " + obj.to_s
         @permissions = obj['permissions'] || {}
         @services = (obj['services'] || {}).map {|s| s['jid'] }
         @sessions.values.each {|shell| shell.permissions = @permissions }
@@ -265,6 +278,7 @@ module Vines
       def valid_user?(jid)
         jid = jid.stripped.to_s if jid.respond_to?(:stripped)
         valid = !!@permissions.find {|unix, jids| jids.include?(jid) }
+        log.info("Trying to lookup perms " + @permissions.to_s)
         log.warn("Denied access to #{jid}") unless valid
         valid
       end
