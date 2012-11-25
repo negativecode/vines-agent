@@ -90,25 +90,12 @@ module Vines
       def startup
         cb = lambda do |component, iter|
           if component
-            log.info("Found unknown component at #{component}, checking…")
-            info = Blather::Stanza::DiscoInfo.new
-            info.to = component.jid.domain
-            @stream.write_with_handler(info) do |reply|
-              unless reply.error? 
-                EM::Iterator.new(reply.features).each { |f, it|
-                  if f.var == NS
-                    log.info("Found vines component at #{component}!")
-                    # FIXME What if we have more than one component found?
-                    #       We do likely want to have a stack here instead 
-                    #          of object for the “@component”         
-                    @component = component.jid
-                    send_system_info
-                    request_permissions
-                  end
-                  it.next
-                } 
-              end
-            end
+            # Pray for we have no unknown components there 
+            log.info("Found vines component at #{component}!")
+            # FIXME Deal with DiscoInfo to ensure this component is our
+            @component = component.jid
+            send_system_info
+            request_permissions
           else
             log.info("Vines component not found, rediscovering . . .")
             EM::Timer.new(10) { discover_component(&cb) }
