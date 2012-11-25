@@ -31,7 +31,7 @@ component. Manage a server as easily as chatting with a friend."
   s.add_development_dependency "minitest"
   s.add_development_dependency "rake"
 
-  s.required_ruby_version = '>= 1.9.3'
+  s.required_ruby_version = '>= 2.0.0'
 end
 
 Gem::PackageTask.new(spec) do |pkg|
