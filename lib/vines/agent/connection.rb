@@ -17,7 +17,7 @@ module Vines
           *options.values_at(:domain, :password, :host, :port, :download, :conf)
 
         certs = File.expand_path('certs', conf)
-        @permissions, @services, @sessions, @component = {}, {}, {}, nil
+        @permissions, @services, @sessions, @components, @component = {}, {}, {}, [], nil
         @ready = false
         @mtx = Mutex.new
 
@@ -88,21 +88,7 @@ module Vines
       # After the bot connects to the chat server, discover the component, send
       # our ohai system description data, and initialize permissions.
       def startup
-        cb = lambda do |component, iter|
-          if component
-            # Pray for we have no unknown components there 
-            log.info("Found vines component at #{component}!")
-            # FIXME Deal with DiscoInfo to ensure this component is our
-            @component = component.jid
-            send_system_info
-            request_permissions
-          else
-            log.info("Vines component not found, rediscovering . . .")
-            EM::Timer.new(10) { discover_component(&cb) }
-          end
-          iter.next
-        end
-        discover_component(&cb)
+        discover_component
       end
 
       def version(node)
@@ -181,16 +167,48 @@ module Vines
       # server for its list of components, then ask each component for it's info.
       # The component broadcasting the http://getvines.com/protocol feature is our
       # Vines service.
-      def discover_component(&cb)
+      def discover_component
+        @components = []
         disco = Blather::Stanza::DiscoItems.new
         disco.to = @stream.jid.domain
         @stream.write_with_handler(disco) do |result|
           unless result.error? 
-            EM::Iterator.new(result.items).each &cb
+            info = Blather::Stanza::DiscoInfo.new
+            # iterate through disco result and collect ’em all
+            EM::Iterator.new(result.items).map proc{ |comp, it_disco|
+              info.to = comp.jid.domain
+              @stream.write_with_handler(info) do |reply|
+                unless reply.error?
+                  # iterate through info results and collect ’em all 
+                  EM::Iterator.new(reply.features).map proc{ |f, it_info|
+                    it_info.return f.var == NS ? comp : nil;
+                  }, proc{ |comps|
+                    # we have collected all the info replies for the
+                    #   disco given, let’s proceed with the next
+                    it_disco.return comps - [nil] 
+                  }
+                end
+              end
+            }, proc{ |compss|
+              # Well, we yielded all the discos, let's request perms etc
+              @components = compss.flatten.uniq  
+              
+              if !@components || @components.length < 1
+                log.info("Vines component not found, rediscovering…")
+                EM::Timer.new(30) { discover_component }
+              end
+              @component = @components[0].jid
+              log.info("Vines component(s) found #{@components}")
+              if @components.length > 1
+                log.warn("Using one #{@component} out of #{@components.length} found")
+              end
+              send_system_info
+              request_permissions
+            }
           end
         end
       end
-
+      
       # Download the list of unix user accounts and the JID's that are allowed
       # to use them. This is used to determine if a change user command like
       # +v user root+ is allowed.
