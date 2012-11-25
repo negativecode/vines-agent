@@ -196,14 +196,15 @@ module Vines
               if !@components || @components.length < 1
                 log.info("Vines component not found, rediscovering…")
                 EM::Timer.new(30) { discover_component }
+              else
+                @component = @components[0].jid
+                log.info("Vines component(s) found #{@components}")
+                if @components.length > 1
+                  log.warn("Using one #{@component} out of #{@components.length} found")
+                end
+                send_system_info
+                request_permissions
               end
-              @component = @components[0].jid
-              log.info("Vines component(s) found #{@components}")
-              if @components.length > 1
-                log.warn("Using one #{@component} out of #{@components.length} found")
-              end
-              send_system_info
-              request_permissions
             }
           end
         end
