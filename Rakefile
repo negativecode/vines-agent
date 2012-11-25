@@ -22,8 +22,8 @@ component. Manage a server as easily as chatting with a friend."
   s.executables  = %w[vines-agent]
   s.require_path = "lib"
 
-  s.add_dependency "blather", "~> 0.8.1"
-  s.add_dependency "ohai", "~> 6.14.0"
+  s.add_dependency "blather", "~> 0.5.12"
+  s.add_dependency "ohai", "~> 0.6.10"
   s.add_dependency "session", "~> 3.1.0"
   s.add_dependency "slave", "~> 1.3.0"
   s.add_dependency "vines", ">= 0.4.0"
@@ -31,7 +31,7 @@ component. Manage a server as easily as chatting with a friend."
   s.add_development_dependency "minitest"
   s.add_development_dependency "rake"
 
-  s.required_ruby_version = '>= 2.0.0'
+  s.required_ruby_version = '>= 1.9.2'
 end
 
 Gem::PackageTask.new(spec) do |pkg|
@@ -55,14 +55,3 @@ Rake::TestTask.new(:test) do |test|
 end
 
 task :default => [:clobber, :test, :gem]
-
-desc 'Helper task to be called from other rakefiles'
-task :agent => [:clobber, :gem]
-
-# FIXME Remove from production
-desc 'Runs an agent from command line'
-task :run do
-  Dir.chdir("/home/am/NetBeansProjects/Repos/wonderland.lit/agent") do
-    sh "ruby -I/home/am/NetBeansProjects/vines-agent.git/lib /home/am/NetBeansProjects/vines-agent.git/bin/vines-agent start"
-  end
-end
