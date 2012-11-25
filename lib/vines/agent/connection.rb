@@ -90,15 +90,30 @@ module Vines
       def startup
         cb = lambda do |component, iter|
           if component
-            log.info("Found vines component at #{component}")
-            @component = component.jid
-            send_system_info
-            request_permissions
-            iter.next
+            log.info("Found unknown component at #{component}, checking…")
+            info = Blather::Stanza::DiscoInfo.new
+            info.to = component.jid.domain
+            @stream.write_with_handler(info) do |reply|
+              unless reply.error? 
+                EM::Iterator.new(reply.features).each { |f, it|
+                  if f.var == NS
+                    log.info("Found vines component at #{component}!")
+                    # FIXME What if we have more than one component found?
+                    #       We do likely want to have a stack here instead 
+                    #          of object for the “@component”         
+                    @component = component.jid
+                    send_system_info
+                    request_permissions
+                  end
+                  it.next
+                } 
+              end
+            end
           else
             log.info("Vines component not found, rediscovering . . .")
             EM::Timer.new(10) { discover_component(&cb) }
           end
+          iter.next
         end
         discover_component(&cb)
       end
@@ -187,22 +202,6 @@ module Vines
             EM::Iterator.new(result.items).each &cb
           end
         end
-      end
-
-
-      # Return true if this JID is the Vines component with which we need to
-      # communicate. This method suspends the Fiber that calls it in order to
-      # turn the disco#info requests synchronous.
-      def component?(jid)
-        fiber = Fiber.current
-        info = Blather::Stanza::DiscoInfo.new
-        info.to = jid
-        @stream.write_with_handler(info) do |reply|
-          features = reply.error? ? [] : reply.features
-          found = !!features.find {|f| f.var == NS }
-          fiber.resume(found)
-        end
-        Fiber.yield
       end
 
       # Download the list of unix user accounts and the JID's that are allowed
