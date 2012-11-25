@@ -1,7 +1,5 @@
 # encoding: UTF-8
 
-require 'thread'
-
 module Vines
   module Agent
 
@@ -162,7 +160,6 @@ module Vines
         end
         iq = Blather::Stanza::Iq::Query.new(:set).tap do |node|
           node.to = @component
-	        log.info "Sending system info to @component [#{@component}]"
           node.query.content = system.to_json
           node.query.namespace = SYSTEMS
         end
@@ -203,7 +200,6 @@ module Vines
         @stream.write_with_handler(info) do |reply|
           features = reply.error? ? [] : reply.features
           found = !!features.find {|f| f.var == NS }
-          log.info "Component found: " + found.to_s
           fiber.resume(found)
         end
         Fiber.yield
@@ -218,18 +214,14 @@ module Vines
           node.query['name'] = @stream.jid.node
           node.query.namespace = SYSTEMS
         end
-        log.info "Request permissions with #{iq}"
         @stream.write_with_handler(iq) do |reply|
-          log.info "Reply is: " + reply.to_s
           update_permissions(reply) unless reply.error?
         end
       end
 
       def update_permissions(node)
-        log.info "Update permissions: " + node.to_s
         return unless node.from == @component
         obj = JSON.parse(node.content) rescue {}
-        log.info "Obj parsed: " + obj.to_s
         @permissions = obj['permissions'] || {}
         @services = (obj['services'] || {}).map {|s| s['jid'] }
         @sessions.values.each {|shell| shell.permissions = @permissions }
@@ -278,7 +270,6 @@ module Vines
       def valid_user?(jid)
         jid = jid.stripped.to_s if jid.respond_to?(:stripped)
         valid = !!@permissions.find {|unix, jids| jids.include?(jid) }
-        log.info("Trying to lookup perms " + @permissions.to_s)
         log.warn("Denied access to #{jid}") unless valid
         valid
       end
