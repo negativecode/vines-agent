@@ -19,6 +19,7 @@ module Vines
         certs = File.expand_path('certs', conf)
         @permissions, @services, @sessions, @components, @component = {}, {}, {}, [], nil
         @ready = false
+        @task_responses = {}
         @mtx = Mutex.new
 
         jid = Blather::JID.new(fqdn, domain, 'vines')
@@ -39,15 +40,15 @@ module Vines
 
         @stream.register_handler(:ready) do
           # [AM] making sure we are to init once
-          #      unless @ready is not enough for an obvious reason 
-          @mtx.synchronize {
+          #      unless @ready is not enough for an obvious reason
+#          @mtx.synchronize {
             unless @ready
               log.info("Connected #{@stream.jid} agent to #{host}:#{port}")
               log.warn("Agent must run as root user to allow user switching") unless root?
               @ready = true
               startup
             end
-          }
+#          }
         end
 
         @stream.register_handler(:subscription, :request?) do |node|
@@ -181,7 +182,7 @@ module Vines
                 unless reply.error?
                   # iterate through info results and collect ’em all 
                   EM::Iterator.new(reply.features).map proc{ |f, it_info|
-                    it_info.return f.var == NS ? comp : nil;
+                    it_info.return f.var == NS ? comp : nil
                   }, proc{ |comps|
                     # we have collected all the info replies for the
                     #   disco given, let’s proceed with the next
@@ -198,7 +199,7 @@ module Vines
                 EM::Timer.new(30) { discover_component }
               else
                 @component = @components[0].jid
-                log.info("Vines component(s) found #{@components}")
+                log.info("Vines component found #{@component}")
                 if @components.length > 1
                   log.warn("Using one #{@component} out of #{@components.length} found")
                 end
@@ -248,8 +249,34 @@ module Vines
 
         return unless valid_user?(bare)
         session = @sessions[full] ||= Shell.new(bare, @permissions)
-        session.run(message.body.strip) do |output|
-          @stream.write(reply(message, output, forward_to))
+        
+        # [AM] Create a TickLoop to collect shell output and send 
+        #      back to recipient by portions. This is needed to 
+        #      implement non-blocking, but not annoying on the other hand
+        #      service. E. g. “ls” im most cases will return immediately, 
+        #      while “ping google.com” will send back stanzas every second
+       
+        session.on_output = lambda {|output|  @task_responses[message.id] += output }
+        session.on_error = lambda {|error|  @task_responses[message.id] += "⇒ #{error}" }
+
+        @task_responses[message.id] = ""
+        task_response_tickloop = EM.tick_loop do
+          unless @task_responses[message.id].empty?
+            @stream.write(reply(message, @task_responses[message.id], forward_to)) 
+            @task_responses[message.id] = ""
+          end
+          sleep 1
+        end
+        session.run(message.body.strip) do |output, exitstatus|
+          task_response_tickloop.stop
+          task_response_tickloop = nil          
+          unless @task_responses[message.id].empty?
+            @stream.write(reply(message, @task_responses[message.id], forward_to)) 
+          end
+          @task_responses.delete message.id
+          if exitstatus && exitstatus != 0 
+            @stream.write(reply(message, "#{exitstatus} ↵ #{message.body}", forward_to))
+          end
         end
       end
 
@@ -260,7 +287,7 @@ module Vines
         Blather::Stanza::Message.new(message.from, body).tap do |node|
           node << node.document.create_element('jid', forward_to, xmlns: NS) if forward_to
           node.thread = message.thread if message.thread
-          node.xhtml = '<span style="font-family:Menlo,Courier,monospace;"></span>'
+          node.xhtml = '<span style="font-family:Menlo,\'Ubuntu Mono\',Courier,monospace;"></span>'
           span = node.xhtml_node.elements.first
           body.each_line do |line|
             span.add_child(Nokogiri::XML::Text.new(line.chomp, span.document))
