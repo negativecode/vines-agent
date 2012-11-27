@@ -41,14 +41,14 @@ module Vines
         @stream.register_handler(:ready) do
           # [AM] making sure we are to init once
           #      unless @ready is not enough for an obvious reason
-#          @mtx.synchronize {
+          @mtx.synchronize {
             unless @ready
               log.info("Connected #{@stream.jid} agent to #{host}:#{port}")
               log.warn("Agent must run as root user to allow user switching") unless root?
               @ready = true
               startup
             end
-#          }
+          }
         end
 
         @stream.register_handler(:subscription, :request?) do |node|
