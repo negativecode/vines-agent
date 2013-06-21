@@ -1,4 +1,4 @@
-== Welcome to Vines Agent
+# Welcome to Vines Agent
 
 Vines Agent executes shell commands sent by users on remote machines. Users are
 authorized against an access control list before being allowed to run commands.
@@ -11,22 +11,31 @@ accounts.
 
 Additional documentation can be found at www.getvines.org.
 
-== Usage
+## Usage
 
-1. gem install vines-agent
-2. vines-agent init wonderland.lit
-3. cd wonderland.lit && vines-agent start
+```
+$ gem install vines-agent
+$ vines-agent init wonderland.lit
+$ cd wonderland.lit && vines-agent start
+```
 
-== Dependencies
+## Dependencies
 
-Vines Agent requires Ruby 1.9.2 or better. Instructions for installing the
+Vines Agent requires Ruby 1.9.3 or better. Instructions for installing the
 needed OS packages, as well as Ruby itself, are available at
 http://www.getvines.org/ruby.
 
-== Contact
+## Development
+
+```
+$ script/bootstrap
+$ script/tests
+```
+
+## Contact
 
 * David Graham <david@negativecode.com>
 
-== License
+## License
 
 Vines Agent is released under the MIT license. Check the LICENSE file for details.
