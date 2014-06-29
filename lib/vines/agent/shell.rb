@@ -10,20 +10,25 @@ module Vines
     class Shell
       include Vines::Log
 
-      attr_writer :permissions
-
+      attr_writer :permissions, :on_output, :on_error
+      
       # Create a new shell session to asynchronously execute commands for this
       # JID. The JID is validated in the permissions Hash before executing
       # commands.
       def initialize(jid, permissions)
         @jid, @permissions = jid, permissions
         @user = allowed_users.first if allowed_users.size == 1
+        @on_output = nil
+        @on_error = nil
         @commands = EM::Queue.new
         process_command_queue
       end
 
       # Queue the shell command to run as soon as the currently executing tasks
       # complete. Yields the shell output to the callback block.
+      # [AM] “v reset” command is supposed to be executed immediately
+      #      to give an ability of interrupting
+      #      (in general, interferring) the current shell task queue  
       def run(command, &callback)
         if reset?(command)
           callback.call(run_built_in(command))
@@ -46,8 +51,8 @@ module Vines
               run_in_slave(command[:command])
             end
           end
-          cb = proc do |output|
-            command[:callback].call(output)
+          cb = proc do |output, exitstatus|
+            command[:callback].call(output, exitstatus)
             process_command_queue
           end
           EM.defer(op, cb)
@@ -58,13 +63,18 @@ module Vines
         return "-> no user selected, run 'v user'" unless @user
         log.info("Running #{command} as #{@user}")
 
-        spawn(@user) unless @shell
+        unless @shell
+          spawn(@user) 
+        end  
+        @shell.outproc = @on_output if @on_output 
+        @shell.errproc = @on_error if @on_error 
+
         out, err = @shell.execute(command)
         output = [].tap do |arr|
           arr << out if out && !out.empty?
           arr << err if err && !err.empty?
         end.join("\n")
-        output.empty? ? '-> command completed' : output
+        return [output.empty? ? '-> command completed' : output, @shell.exitstatus]
       rescue
         close
         '-> restarted shell'

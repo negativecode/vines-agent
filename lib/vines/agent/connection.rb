@@ -17,8 +17,10 @@ module Vines
           *options.values_at(:domain, :password, :host, :port, :download, :conf)
 
         certs = File.expand_path('certs', conf)
-        @permissions, @services, @sessions, @component = {}, {}, {}, nil
+        @permissions, @services, @sessions, @components, @component = {}, {}, {}, [], nil
         @ready = false
+        @task_responses = {}
+        @mtx = Mutex.new
 
         jid = Blather::JID.new(fqdn, domain, 'vines')
         @stream = Blather::Client.setup(jid, password, host, port, certs)
@@ -37,13 +39,16 @@ module Vines
         end
 
         @stream.register_handler(:ready) do
-          # prevent handler called twice
-          unless @ready
-            log.info("Connected #{@stream.jid} agent to #{host}:#{port}")
-            log.warn("Agent must run as root user to allow user switching") unless root?
-            @ready = true
-            startup
-          end
+          # [AM] making sure we are to init once
+          #      unless @ready is not enough for an obvious reason
+          @mtx.synchronize {
+            unless @ready
+              log.info("Connected #{@stream.jid} agent to #{host}:#{port}")
+              log.warn("Agent must run as root user to allow user switching") unless root?
+              @ready = true
+              startup
+            end
+          }
         end
 
         @stream.register_handler(:subscription, :request?) do |node|
@@ -77,23 +82,14 @@ module Vines
         @stream.run
       end
 
+#     —————————————————————————————————————————————————————————————————————————
       private
+#     —————————————————————————————————————————————————————————————————————————
 
       # After the bot connects to the chat server, discover the component, send
       # our ohai system description data, and initialize permissions.
       def startup
-        cb = proc do |component|
-          if component
-            log.info("Found vines component at #{component}")
-            @component = component
-            send_system_info
-            request_permissions
-          else
-            log.info("Vines component not found, rediscovering . . .")
-            EM::Timer.new(10) { discover_component(&cb) }
-          end
-        end
-        discover_component(&cb)
+        discover_component
       end
 
       def version(node)
@@ -173,33 +169,48 @@ module Vines
       # The component broadcasting the http://getvines.com/protocol feature is our
       # Vines service.
       def discover_component
+        @components = []
         disco = Blather::Stanza::DiscoItems.new
         disco.to = @stream.jid.domain
         @stream.write_with_handler(disco) do |result|
-          items = result.error? ? [] : result.items
-          Fiber.new do
-            # use fiber instead of EM::Iterator until EM 1.0.0 release
-            found = items.find {|item| component?(item.jid) }
-            yield found ? found.jid : nil
-          end.resume
+          unless result.error? 
+            info = Blather::Stanza::DiscoInfo.new
+            # iterate through disco result and collect ’em all
+            EM::Iterator.new(result.items).map proc{ |comp, it_disco|
+              info.to = comp.jid.domain
+              @stream.write_with_handler(info) do |reply|
+                unless reply.error?
+                  # iterate through info results and collect ’em all 
+                  EM::Iterator.new(reply.features).map proc{ |f, it_info|
+                    it_info.return f.var == NS ? comp : nil
+                  }, proc{ |comps|
+                    # we have collected all the info replies for the
+                    #   disco given, let’s proceed with the next
+                    it_disco.return comps - [nil] 
+                  }
+                end
+              end
+            }, proc{ |compss|
+              # Well, we yielded all the discos, let's request perms etc
+              @components = compss.flatten.uniq  
+              
+              if !@components || @components.length < 1
+                log.info("Vines component not found, rediscovering…")
+                EM::Timer.new(30) { discover_component }
+              else
+                @component = @components[0].jid
+                log.info("Vines component found #{@component}")
+                if @components.length > 1
+                  log.warn("Using one #{@component} out of #{@components.length} found")
+                end
+                send_system_info
+                request_permissions
+              end
+            }
+          end
         end
       end
-
-      # Return true if this JID is the Vines component with which we need to
-      # communicate. This method suspends the Fiber that calls it in order to
-      # turn the disco#info requests synchronous.
-      def component?(jid)
-        fiber = Fiber.current
-        info = Blather::Stanza::DiscoInfo.new
-        info.to = jid
-        @stream.write_with_handler(info) do |reply|
-          features = reply.error? ? [] : reply.features
-          found = !!features.find {|f| f.var == NS }
-          fiber.resume(found)
-        end
-        Fiber.yield
-      end
-
+      
       # Download the list of unix user accounts and the JID's that are allowed
       # to use them. This is used to determine if a change user command like
       # +v user root+ is allowed.
@@ -238,8 +249,34 @@ module Vines
 
         return unless valid_user?(bare)
         session = @sessions[full] ||= Shell.new(bare, @permissions)
-        session.run(message.body.strip) do |output|
-          @stream.write(reply(message, output, forward_to))
+        
+        # [AM] Create a TickLoop to collect shell output and send 
+        #      back to recipient by portions. This is needed to 
+        #      implement non-blocking, but not annoying on the other hand
+        #      service. E. g. “ls” im most cases will return immediately, 
+        #      while “ping google.com” will send back stanzas every second
+       
+        session.on_output = lambda {|output|  @task_responses[message.id] += output }
+        session.on_error = lambda {|error|  @task_responses[message.id] += "⇒ #{error}" }
+
+        @task_responses[message.id] = ""
+        task_response_tickloop = EM.tick_loop do
+          unless @task_responses[message.id].empty?
+            @stream.write(reply(message, @task_responses[message.id], forward_to)) 
+            @task_responses[message.id] = ""
+          end
+          sleep 1
+        end
+        session.run(message.body.strip) do |output, exitstatus|
+          task_response_tickloop.stop
+          task_response_tickloop = nil          
+          unless @task_responses[message.id].empty?
+            @stream.write(reply(message, @task_responses[message.id], forward_to)) 
+          end
+          @task_responses.delete message.id
+          if exitstatus && exitstatus != 0 
+            @stream.write(reply(message, "#{exitstatus} ↵ #{message.body}", forward_to))
+          end
         end
       end
 
@@ -250,7 +287,7 @@ module Vines
         Blather::Stanza::Message.new(message.from, body).tap do |node|
           node << node.document.create_element('jid', forward_to, xmlns: NS) if forward_to
           node.thread = message.thread if message.thread
-          node.xhtml = '<span style="font-family:Menlo,Courier,monospace;"></span>'
+          node.xhtml = '<span style="font-family:Menlo,\'Ubuntu Mono\',Courier,monospace;"></span>'
           span = node.xhtml_node.elements.first
           body.each_line do |line|
             span.add_child(Nokogiri::XML::Text.new(line.chomp, span.document))
